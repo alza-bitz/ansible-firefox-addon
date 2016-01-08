@@ -1,39 +1,39 @@
 #!/bin/bash
 
-set -e
-
-#set -o posix
-
 source ${1}
 
-function fail {
+fail() {
   local msg=$1
   local stdout=$2
   printf '{ "failed": true, "msg": "%s", "stdout": "%s" }\n' "$msg" "$stdout"
-  return 1
+  exit 1
 }
 
-function wick-indirect {
-  unset -v "$1" || printf "Invalid identifier: $1" >&2
-  printf -v "$1" '%s' "$2"
+result() {
+  unset -v "$1" 2>/dev/null || fail "invalid result identifier: $1"
+  declare -g -r $1="$2"
 }
 
-function ensure_profile {
-  stdout=$(set -o pipefail; firefoxx -no-remote -CreateProfile default 2>&1 | cut -d \' -f4) 
-  [[ $? -eq 0 ]] || { fail "couldn't determine profile path" "$stdout"; return 1; }
-  local "$1" && wick-indirect "$1" "${stdout%/*}"
-#  printf "${stdout%/*}"
+ensure_profile() {
+  local result_name=$1
+  local stdout
+  stdout=$(set -o pipefail; firefox -no-remote -CreateProfile default 2>&1 | 
+    sed -n -r "s/Success: created profile '(.+)' at '(.+)'/\2/p") 
+  [[ $? -eq 0 ]] || fail "couldn't determine profile path" "$stdout"
+  result "$result_name" "${stdout%/*}"
 }
 
-function download {
-  local url=$1
-  local dir=$2
-  { pushd $dir >/dev/null && curl -s -L -o addon.xpi $url && popd >/dev/null; } || { fail "couldn't download: $url"; return 1; }
-  printf "$dir/addon.xpi"
+download() {
+  local result_name=$1
+  local url=$2
+  local dir=$3
+  { pushd $dir >/dev/null && curl -s -L -o addon.xpi $url && popd >/dev/null; } || fail "couldn't download addon: $url"
+  result "$result_name" "$dir/addon.xpi"
 }
 
-function parse_uid {
-  local file=$1
+parse_uid() {
+  local result_name=$1
+  local file=$2
   local IFS=$'\n'
   stdout_lines=($(xmllint --shell <(unzip -p $file install.rdf) <<EOF
     setns rdf=http://www.w3.org/1999/02/22-rdf-syntax-ns#
@@ -41,36 +41,43 @@ function parse_uid {
     cat /rdf:RDF/rdf:Description/em:id/text()
 EOF
   ))
-  [[ $? -eq 0 ]] || { fail "couldn't determine uid"; return 1; }
-  printf "${stdout_lines[1]}"
+  [[ $? -eq 0 ]] || fail "couldn't determine uid of addon"
+  result "$result_name" "${stdout_lines[1]}"
 }
 
-function verify {
+verify() {
   local uid=$1
   [[ -d "$addon_path/$uid" ]] && return 0
   return 1
 }
 
-function install {
+install() {
   local file=$1
   local uid=$2
   stdout=$({ mkdir -p $addon_path && unzip $file -d "$addon_path/$uid" && chmod -R u=rwX,go=rX "$addon_path/$uid"; } 2>&1)
-  [[ $? -eq 0 ]] || { fail "couldn't install $uid" "$stdout"; return 1; }
+  [[ $? -eq 0 ]] || fail "couldn't install addon: $uid" "$stdout"
 }
 
-function uninstall {
+uninstall() {
   local uid=$1
   stdout=$(rm -r "$addon_path/$uid" 2>&1)
-  [[ $? -eq 0 ]] || { fail "couldn't uninstall $uid" "$stdout"; return 1; }
+  [[ $? -eq 0 ]] || fail "couldn't uninstall addon: $uid" "$stdout"
 }
 
-function cleanup {
-  local dir=$1
-  rm -rf $dir
+setup_tmp() {
+  local result_name=$1
+  local stdout
+  stdout=$(mktemp -d -p /root 2>&1) || fail "couldn't create tmp dir" "$stdout"
+  result "$result_name" "$stdout"
+}
+
+cleanup_tmp() {
+  local tmp=$1
+  rm -rf $tmp
 }
 
 [[ -n $url ]] || fail "missing required arguments: url"
-[[ -z $profile || -e "${profile}/prefs.js" ]] || fail "no firefox profile found at: $profile"
+[[ -z $profile || -e "${profile}/prefs.js" ]] || fail "no profile found at: $profile"
 [[ -z $state || $state = "present" || $state = "absent" ]] || fail "value of state must be one of: present,absent, got: $state"
 
 # http://stackoverflow.com/questions/592620/check-if-a-program-exists-from-a-bash-script
@@ -79,13 +86,13 @@ hash unzip 2>/dev/null || fail "required command not found: unzip"
 hash xmllint 2>/dev/null || fail "required command not found: xmllint"
 hash chmod 2>/dev/null || fail "required command not found: chmod"
 
-readonly addon_tmp=$(mktemp -d)
-trap 'cleanup $addon_tmp' EXIT
+setup_tmp addon_tmp
+trap 'cleanup_tmp $addon_tmp' EXIT
 
-{ [[ -n $profile ]] && declare addon_profile=$profile; } || ensure_profile addon_profile
-readonly addon_file=$(download $url $addon_tmp)
+{ [[ -n $profile ]] && readonly addon_profile=$profile; } || ensure_profile addon_profile
+download addon_file $url $addon_tmp
 readonly addon_path=${addon_profile}/extensions
-readonly addon_uid=$(parse_uid $addon_file)
+parse_uid addon_uid $addon_file
 readonly addon_state="${state:-present}"
 
 if [[ $addon_state = "present" ]]; then
