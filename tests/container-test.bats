@@ -11,65 +11,71 @@ docker_exec() {
   docker exec $DOCKER_CONTAINER_NAME $@ > /dev/null
 }
 
-ansible_exec() {
-  ANSIBLE_LIBRARY=../ ansible "$@"
+docker_exec_d() {
+  docker exec -d $DOCKER_CONTAINER_NAME $@ > /dev/null
+}
+
+docker_exec_sh() {
+  docker exec $DOCKER_CONTAINER_NAME sh -c '$@' > /dev/null
+}
+
+ansible_exec_module() {
+  local name=$1
+  local args=$2
+  ANSIBLE_LIBRARY=../ ansible localhost -i hosts -u root -m $name ${args:+-a "$args"}
 }
 
 setup() {
   docker run --name $DOCKER_CONTAINER_NAME -d -p 5555:22 -e AUTHORIZED_KEYS="$(< $SSH_PUBLIC_KEY_FILE)" -v ansible-firefox-addon-yum-cache:/var/cache/yum/x86_64/21/ $DOCKER_IMAGE
   docker_exec sed -i -e 's/keepcache=\(.*\)/keepcache=1/' /etc/yum.conf
-  docker_exec yum -y install xorg-x11-server-Xvfb
-  docker exec -d ansible-firefox-addon Xvfb :1  
+  docker_exec yum -y install deltarpm xorg-x11-server-Xvfb
+  docker_exec_d Xvfb :1
+  readonly addon_url=https://addons.mozilla.org/en-US/firefox/addon/adblock-plus
 }
 
 @test "Module exec with url arg missing" {
-  run ansible_exec localhost -i hosts -u root -m firefox_addon
+  run ansible_exec_module firefox_addon
   [[ $output =~ "missing required arguments: url" ]]
 }
 
 @test "Module exec with state arg having invalid value" {
-  run ansible_exec localhost -i hosts -u root -m firefox_addon -a 'url=https://addons.mozilla.org/firefox/downloads/latest/1865/addon-1865-latest.xpi state=latest'
+  run ansible_exec_module firefox_addon "url=$addon_url state=latest"
   [[ $output =~ "value of state must be one of: present,absent, got: latest" ]]
 }
 
 @test "Module exec with state arg having default value of present" {
   docker_exec yum -y install firefox unzip curl
-  run ansible_exec localhost -i hosts -u root -m firefox_addon -a 'url=https://addons.mozilla.org/firefox/downloads/latest/1865/addon-1865-latest.xpi'
-
-  printf "output was: $output\n"
+  run ansible_exec_module firefox_addon "url=$addon_url display=:1"
+  printf "output: %s\n" $output
   [[ $output =~ changed.*true ]]
-  docker_exec test -d "~/.mozilla/firefox/*.default/extensions/{d10d0bf8-f5b5-c8b4-a8b2-2b9879e08c5d}"
+  docker_exec_sh test -d "~/.mozilla/firefox/*.default/extensions/{d10d0bf8-f5b5-c8b4-a8b2-2b9879e08c5d}"
 }
 
 @test "Module exec with state present" {
-  skip
   docker_exec yum -y install firefox unzip curl
-  run ansible_exec localhost -i hosts -u root -m firefox_addon -a 'url=https://addons.mozilla.org/firefox/downloads/latest/1865/addon-1865-latest.xpi state=present'
+  run ansible_exec_module firefox_addon "url=$addon_url state=present display=:1"
   [[ $output =~ changed.*true ]]
 }
 
 @test "Module exec with state absent" {
-  skip
-  docker_exec yum -y install unzip curl
-  run ansible_exec localhost -i hosts -u root -m firefox_addon -a 'url=https://addons.mozilla.org/firefox/downloads/latest/1865/addon-1865-latest.xpi state=absent'
+  docker_exec yum -y install firefox unzip curl
+  run ansible_exec_module firefox_addon "url=$addon_url state=absent display=:1"
   [[ $output =~ changed.*false ]]
 }
 
 @test "Module exec with state absent and addon already installed" {
-  skip
   docker_exec yum -y install firefox unzip curl
-  run ansible_exec localhost -i hosts -u root -m firefox_addon -a 'url=https://addons.mozilla.org/firefox/downloads/latest/1865/addon-1865-latest.xpi state=present'
+  run ansible_exec_module firefox_addon "url=$addon_url state=present display=:1"
   [[ $output =~ changed.*true ]]
-  run ansible_exec localhost -i hosts -u root -m firefox_addon -a 'url=https://addons.mozilla.org/firefox/downloads/latest/1865/addon-1865-latest.xpi state=absent'  
+  run ansible_exec_module firefox_addon "url=$addon_url state=absent display=:1"
   [[ $output =~ changed.*true ]]
-  docker_exec test ! -e "/usr/lib64/firefox/browser/extensions/{d10d0bf8-f5b5-c8b4-a8b2-2b9879e08c5d}"
+  docker_exec_sh test ! -e "/usr/lib64/firefox/browser/extensions/{d10d0bf8-f5b5-c8b4-a8b2-2b9879e08c5d}"
 }
 
 @test "Module exec with state present twice and check idempotent" {
-  skip
   docker_exec yum -y install firefox unzip curl
-  run ansible_exec localhost -i hosts -u root -m firefox_addon -a 'url=https://addons.mozilla.org/firefox/downloads/latest/1865/addon-1865-latest.xpi'
-  run ansible_exec localhost -i hosts -u root -m firefox_addon -a 'url=https://addons.mozilla.org/firefox/downloads/latest/1865/addon-1865-latest.xpi'
+  run ansible_exec_module firefox_addon "url=$addon_url display=:1"
+  run ansible_exec_module firefox_addon "url=$addon_url display=:1"
   [[ $output =~ changed.*false ]]
 }
 

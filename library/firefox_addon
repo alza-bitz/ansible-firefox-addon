@@ -1,103 +1,153 @@
 #!/bin/bash
 
-source ${1}
+script() {
+  [[ ${0##*/} = firefox_addon ]]
+}
 
 fail() {
-  local msg=$1
-  local stdout=$2
-  printf '{ "failed": true, "msg": "%s", "stdout": "%s" }\n' "$msg" "$stdout"
-  exit 1
+  local _msg=$1
+  local _stdout=$2
+  printf '{ "failed": true, "msg": "%s", "stdout": "%s" }\n' "$_msg" "$_stdout" >&2
+  { script && exit 1; } || return 1
 }
 
 result() {
-  unset -v "$1" 2>/dev/null || fail "invalid result identifier: $1"
-  declare -g -r $1="$2"
+  declare -g -r $1="$2" 2>/dev/null || fail "invalid result identifier: $1"
 }
 
 ensure_profile() {
-  local result_name=$1
-  local stdout
-  stdout=$(set -o pipefail; firefox -no-remote -CreateProfile default 2>&1 | 
-    sed -n -r "s/Success: created profile '(.+)' at '(.+)'/\2/p") 
-  [[ $? -eq 0 ]] || fail "couldn't determine profile path" "$stdout"
-  result "$result_name" "${stdout%/*}"
+  local _display=$1
+  local _result_name=$2
+  local _stdout
+  _stdout=$(firefox ${_display:+--display $_display} -no-remote -CreateProfile default 2>&1)
+  [[ $? -eq 0 ]] || fail "couldn't determine profile path" "$_stdout"
+  [[ $_stdout =~ Success:\ created\ profile\ \'(.+)\'\ at\ \'(.+)\' ]] || fail "couldn't determine profile path"
+  local _profile_path=${BASH_REMATCH[2]}
+  result "$_result_name" ${profile_path%/*}
+}
+
+url_slug() {
+  local _url=$1
+  { [[ $_url =~ https://addons.mozilla.org/.+/firefox/addon/([^/]+) ]] && printf '%s' ${BASH_REMATCH[1]}; } || return 1
+}
+
+details() {
+  local _url=$1
+  local _result_name=$2
+  local _slug
+  _slug=$(url_slug $_url) || fail "couldn't determine addon id from url: $_url"
+  local _stdout
+  _stdout=$(curl -s -f -L https://services.addons.mozilla.org/firefox/api/1.5/addon/$_slug)
+  [[ $? -eq 0 ]] || fail "couldn't get details of addon: $_slug" "$_stdout"
+  result "$_result_name" "$_stdout"
+}
+
+details_guid() {
+  local _details=$1
+  local _result_name=$2
+  local _stdout
+  _stdout=$(xmllint --xpath "normalize-space(//addon/guid)" <(printf "$_details")) || fail "couldn't determine guid of addon"
+  result "$_result_name" "$_stdout" 
+}
+
+details_url() {
+  local _details=$1
+  local _result_name=$2
+  local _stdout
+  _stdout=$(xmllint --xpath "normalize-space(//addon/install[1])" <(printf "$_details")) || \
+    fail "couldn't determine download url of addon"
+  result "$_result_name" "$_stdout"
 }
 
 download() {
-  local result_name=$1
-  local url=$2
-  local dir=$3
-  { pushd $dir >/dev/null && curl -s -L -o addon.xpi $url && popd >/dev/null; } || fail "couldn't download addon: $url"
-  result "$result_name" "$dir/addon.xpi"
+  local _url=$1
+  local _dir=$2
+  local _result_name=$3
+  { pushd $_dir >/dev/null && curl -s -f -L -o addon.xpi $_url && popd >/dev/null; } || fail "couldn't download addon: $url"
+  result "$_result_name" "$_dir/addon.xpi"
 }
 
-parse_uid() {
-  local result_name=$1
-  local file=$2
+parse_guid() {
+  local _file=$1
+  local _result_name=$2
   local IFS=$'\n'
-  stdout_lines=($(xmllint --shell <(unzip -p $file install.rdf) <<EOF
+  local _stdout_lines
+  _stdout_lines=($(xmllint --shell <(unzip -p $_file install.rdf) <<EOF
     setns rdf=http://www.w3.org/1999/02/22-rdf-syntax-ns#
     setns em=http://www.mozilla.org/2004/em-rdf#
     cat /rdf:RDF/rdf:Description/em:id/text()
 EOF
   ))
-  [[ $? -eq 0 ]] || fail "couldn't determine uid of addon"
-  result "$result_name" "${stdout_lines[1]}"
+  [[ $? -eq 0 ]] || fail "couldn't determine guid of addon"
+  result "$_result_name" "${_stdout_lines[1]}"
 }
 
 verify() {
-  local uid=$1
-  [[ -d "$addon_path/$uid" ]] && return 0
+  local _uid=$1
+  [[ -d "$addon_path/$_uid" ]] && return 0
   return 1
 }
 
 install() {
-  local file=$1
-  local uid=$2
-  stdout=$({ mkdir -p $addon_path && unzip $file -d "$addon_path/$uid" && chmod -R u=rwX,go=rX "$addon_path/$uid"; } 2>&1)
-  [[ $? -eq 0 ]] || fail "couldn't install addon: $uid" "$stdout"
+  local _uid=$1
+  local _file=$2
+  local _stdout
+  _stdout=$({ mkdir -p $addon_path && unzip $_file -d "$addon_path/$_uid" && chmod -R u=rwX,go=rX "$addon_path/$_uid"; } 2>&1)
+  [[ $? -eq 0 ]] || fail "couldn't install addon: $_uid" "$_stdout"
 }
 
 uninstall() {
-  local uid=$1
-  stdout=$(rm -r "$addon_path/$uid" 2>&1)
-  [[ $? -eq 0 ]] || fail "couldn't uninstall addon: $uid" "$stdout"
+  local _uid=$1
+  local _stdout
+  _stdout=$(rm -r "$addon_path/$_uid" 2>&1)
+  [[ $? -eq 0 ]] || fail "couldn't uninstall addon: $_uid" "$_stdout"
 }
 
 setup_tmp() {
-  local result_name=$1
-  local stdout
-  stdout=$(mktemp -d -p /root 2>&1) || fail "couldn't create tmp dir" "$stdout"
-  result "$result_name" "$stdout"
+  local _result_name=$1
+  local _stdout
+  _stdout=$(mktemp -d 2>&1) || fail "couldn't create tmp dir" "$_stdout"
+  result "$_result_name" "$_stdout"
 }
 
 cleanup_tmp() {
-  local tmp=$1
-  rm -rf $tmp
+  local _tmp=$1
+  rm -rf $_tmp
 }
 
-[[ -n $url ]] || fail "missing required arguments: url"
-[[ -z $profile || -e "${profile}/prefs.js" ]] || fail "no profile found at: $profile"
-[[ -z $state || $state = "present" || $state = "absent" ]] || fail "value of state must be one of: present,absent, got: $state"
+main() {
+  source $1
 
-# http://stackoverflow.com/questions/592620/check-if-a-program-exists-from-a-bash-script
-hash curl 2>/dev/null || fail "required command not found: curl"
-hash unzip 2>/dev/null || fail "required command not found: unzip"
-hash xmllint 2>/dev/null || fail "required command not found: xmllint"
-hash chmod 2>/dev/null || fail "required command not found: chmod"
+  [[ -n $url ]] || fail "missing required arguments: url"
+  [[ -z $profile || -e "${profile}/prefs.js" ]] || fail "no profile found at: $profile"
+  [[ -z $state || $state = "present" || $state = "absent" ]] || fail "value of state must be one of: present,absent, got: $state"
 
-setup_tmp addon_tmp
-trap 'cleanup_tmp $addon_tmp' EXIT
+  # http://stackoverflow.com/questions/592620/check-if-a-program-exists-from-a-bash-script
+  hash firefox 2>/dev/null || fail "required command not found: firefox"
+  hash curl 2>/dev/null || fail "required command not found: curl"
+  hash unzip 2>/dev/null || fail "required command not found: unzip"
+  hash xmllint 2>/dev/null || fail "required command not found: xmllint"
+  hash chmod 2>/dev/null || fail "required command not found: chmod"
 
-{ [[ -n $profile ]] && readonly addon_profile=$profile; } || ensure_profile addon_profile
-download addon_file $url $addon_tmp
-readonly addon_path=${addon_profile}/extensions
-parse_uid addon_uid $addon_file
-readonly addon_state="${state:-present}"
+  setup_tmp addon_tmp
+  trap 'cleanup_tmp $addon_tmp' EXIT
 
-if [[ $addon_state = "present" ]]; then
-  { verify $addon_uid && printf '{"changed": false}'; } || { install $addon_file $addon_uid && printf '{"changed": true}'; }
-else
-  { verify $addon_uid && uninstall $addon_uid && printf '{"changed": true}'; } || printf '{"changed": false}' 
-fi
+  { [[ -n $profile ]] && readonly addon_profile=$profile; } || ensure_profile $display addon_profile
+  readonly addon_path=${addon_profile}/extensions
+  details $url addon_details
+  details_guid "$addon_details" addon_guid
+  readonly addon_state="${state:-present}"
 
+  if [[ $addon_state = "present" ]]; then
+    { verify $addon_guid && printf '{"changed": false}'; } || { 
+      details_url "$addon_details" addon_url
+      download $addon_url $addon_tmp addon_file
+      install $addon_guid $addon_file
+      printf '{"changed": true}' 
+    }
+  else
+    { verify $addon_guid && uninstall $addon_guid && printf '{"changed": true}'; } || printf '{"changed": false}' 
+  fi
+}
+
+{ script && main $1; } || true

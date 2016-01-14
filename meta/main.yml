@@ -1,0 +1,5 @@
+---
+galaxy_info:
+  author: Alex Coyle
+  description: Provides a 'firefox_addon' Ansible module for installing or uninstalling Firefox addons
+dependencies: []
