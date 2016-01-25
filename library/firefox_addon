@@ -59,6 +59,11 @@ details_url() {
   result "$_result_name" "$_stdout"
 }
 
+details_complete_theme() {
+  local _details=$1
+  xmllint --xpath "//addon[type/@id=2]" <(printf "$_details") >/dev/null 2>&1
+}
+
 download() {
   local _url=$1
   local _dir=$2
@@ -82,6 +87,21 @@ EOF
   result "$_result_name" "${_stdout_lines[1]}"
 }
 
+parse_internal_name() {
+  local _file=$1 
+  local _result_name=$2
+  local IFS=$'\n'
+  local _stdout_lines
+  _stdout_lines=($(xmllint --shell <(unzip -p $_file install.rdf) <<EOF
+    setns rdf=http://www.w3.org/1999/02/22-rdf-syntax-ns#
+    setns em=http://www.mozilla.org/2004/em-rdf#
+    cat /rdf:RDF/rdf:Description/em:internalName/text()
+EOF
+  ))
+  [[ $? -eq 0 ]] || fail "couldn't determine internal name of addon"
+  result "$_result_name" "${_stdout_lines[1]}"  
+}
+
 verify() {
   local _uid=$1
   [[ -d "$addon_path/$_uid" ]] && return 0
@@ -101,6 +121,15 @@ uninstall() {
   local _stdout
   _stdout=$(rm -r "$addon_path/$_uid" 2>&1)
   [[ $? -eq 0 ]] || fail "couldn't uninstall addon: $_uid" "$_stdout"
+}
+
+prefs_user() {
+  local _profile=$1
+  local _name=$2
+  local _value=$3
+  [[ -e $_profile/user.js ]] || printf '\n' > $_profile/user.js
+  sed -i '/user_pref("'$_name'",/{h;s/,.*/, '$_value');/};${x;/^$/{s//user_pref("'$_name'", '$_value');/;H};x}' \
+    $_profile/user.js || fail "couldn't modify prefs: $_profile/user.js" 
 }
 
 setup_tmp() {
@@ -143,6 +172,10 @@ main() {
       details_url "$addon_details" addon_url
       download $addon_url $addon_tmp addon_file
       install $addon_guid $addon_file
+      details_complete_theme "$addon_details" && {
+        parse_internal_name $addon_file addon_internal_name
+        prefs_user $addon_profile general.skins.selectedSkin '"'$addon_internal_name'"'
+      }
       printf '{"changed": true}' 
     }
   else

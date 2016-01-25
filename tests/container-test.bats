@@ -22,9 +22,9 @@ docker_exec_sh() {
 }
 
 ansible_exec_module() {
-  local name=$1
-  local args=$2
-  ANSIBLE_LIBRARY=../ ansible localhost -i hosts -u root -m $name ${args:+-a "$args"}
+  local _name=$1
+  local _args=$2
+  ANSIBLE_LIBRARY=../ ansible localhost -i hosts -u root -m $_name ${_args:+-a "$_args"}
 }
 
 setup() {
@@ -48,7 +48,6 @@ setup() {
 @test "Module exec with state arg having default value of present" {
   docker_exec yum -y install firefox unzip curl
   run ansible_exec_module firefox_addon "url=$addon_url display=:1"
-  printf "output: %s\n" $output
   [[ $output =~ changed.*true ]]
   docker_exec_sh test -d "~/.mozilla/firefox/*.default/extensions/{d10d0bf8-f5b5-c8b4-a8b2-2b9879e08c5d}"
 }
@@ -79,6 +78,14 @@ setup() {
   run ansible_exec_module firefox_addon "url=$addon_url display=:1"
   run ansible_exec_module firefox_addon "url=$addon_url display=:1"
   [[ $output =~ changed.*false ]]
+}
+
+@test "Module exec with complete theme addon and check selected skin pref" {
+  local _addon_url=https://addons.mozilla.org/en-US/firefox/addon/fxchrome
+  docker_exec yum -y install firefox unzip curl
+  run ansible_exec_module firefox_addon "url=$_addon_url display=:1"
+  [[ $output =~ changed.*true ]]
+  docker_exec_sh grep FXChrome "~/.mozilla/firefox/*.default/user.js"
 }
 
 teardown() {
