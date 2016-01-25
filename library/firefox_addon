@@ -23,7 +23,7 @@ ensure_profile() {
   [[ $? -eq 0 ]] || fail "couldn't determine profile path" "$_stdout"
   [[ $_stdout =~ Success:\ created\ profile\ \'(.+)\'\ at\ \'(.+)\' ]] || fail "couldn't determine profile path"
   local _profile_path=${BASH_REMATCH[2]}
-  result "$_result_name" ${profile_path%/*}
+  result "$_result_name" ${_profile_path%/*}
 }
 
 url_slug() {

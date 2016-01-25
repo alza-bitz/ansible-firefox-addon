@@ -16,7 +16,9 @@ docker_exec_d() {
 }
 
 docker_exec_sh() {
-  docker exec $DOCKER_CONTAINER_NAME sh -c '$@' > /dev/null
+  # workaround for https://github.com/sstephenson/bats/issues/89
+  local IFS=' '
+  docker exec $DOCKER_CONTAINER_NAME sh -c "$*" > /dev/null
 }
 
 ansible_exec_module() {
@@ -69,7 +71,7 @@ setup() {
   [[ $output =~ changed.*true ]]
   run ansible_exec_module firefox_addon "url=$addon_url state=absent display=:1"
   [[ $output =~ changed.*true ]]
-  docker_exec_sh test ! -e "/usr/lib64/firefox/browser/extensions/{d10d0bf8-f5b5-c8b4-a8b2-2b9879e08c5d}"
+  docker_exec_sh test ! -e "~/.mozilla/firefox/*.default/extensions/{d10d0bf8-f5b5-c8b4-a8b2-2b9879e08c5d}"
 }
 
 @test "Module exec with state present twice and check idempotent" {
