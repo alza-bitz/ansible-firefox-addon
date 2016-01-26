@@ -54,7 +54,7 @@ details_url() {
   local _details=$1
   local _result_name=$2
   local _stdout
-  _stdout=$(xmllint --xpath "normalize-space(//addon/install[1])" <(printf "$_details")) || \
+  _stdout=$(xmllint --xpath "normalize-space(//addon/install[@os='Linux' or @os='ALL'])" <(printf "$_details")) || \
     fail "couldn't determine download url of addon"
   result "$_result_name" "$_stdout"
 }
