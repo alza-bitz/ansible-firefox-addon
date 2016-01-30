@@ -2,4 +2,12 @@
 galaxy_info:
   author: Alex Coyle
   description: Provides a 'firefox_addon' Ansible module for installing or uninstalling Firefox addons
+  license: BSD
+  min_ansible_version: 1.9
+  platforms:
+  - name: GenericLinux
+    versions:
+    - any
+  categories:
+  - web
 dependencies: []
