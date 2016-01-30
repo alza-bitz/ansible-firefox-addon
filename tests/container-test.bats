@@ -1,24 +1,24 @@
 #!/usr/bin/env bats
 
-# testing requirements: docker, ansible, xargs
+# testing requirements: docker, ansible
 
 # https://github.com/tutumcloud/tutum-fedora
-readonly DOCKER_IMAGE="tutum/fedora:21"
-readonly SSH_PUBLIC_KEY_FILE=~/.ssh/id_rsa.pub
-readonly DOCKER_CONTAINER_NAME="ansible-firefox-addon"
+readonly docker_image="tutum/fedora:21"
+readonly docker_container_name="ansible-firefox-addon"
+readonly addon_url=https://addons.mozilla.org/en-US/firefox/addon/adblock-plus
 
 docker_exec() {
-  docker exec $DOCKER_CONTAINER_NAME $@ > /dev/null
+  docker exec $docker_container_name $@ > /dev/null
 }
 
 docker_exec_d() {
-  docker exec -d $DOCKER_CONTAINER_NAME $@ > /dev/null
+  docker exec -d $docker_container_name $@ > /dev/null
 }
 
 docker_exec_sh() {
   # workaround for https://github.com/sstephenson/bats/issues/89
   local IFS=' '
-  docker exec $DOCKER_CONTAINER_NAME sh -c "$*" > /dev/null
+  docker exec $docker_container_name sh -c "$*" > /dev/null
 }
 
 ansible_exec_module() {
@@ -28,11 +28,11 @@ ansible_exec_module() {
 }
 
 setup() {
-  docker run --name $DOCKER_CONTAINER_NAME -d -p 5555:22 -e AUTHORIZED_KEYS="$(< $SSH_PUBLIC_KEY_FILE)" -v ansible-firefox-addon-yum-cache:/var/cache/yum/x86_64/21/ $DOCKER_IMAGE
+  local _ssh_public_key=~/.ssh/id_rsa.pub
+  docker run --name $docker_container_name -d -p 5555:22 -e AUTHORIZED_KEYS="$(< $_ssh_public_key)" -v $docker_container_name:/var/cache/yum/x86_64/21/ $docker_image
   docker_exec sed -i -e 's/keepcache=\(.*\)/keepcache=1/' /etc/yum.conf
   docker_exec yum -y install deltarpm xorg-x11-server-Xvfb
   docker_exec_d Xvfb :1
-  readonly addon_url=https://addons.mozilla.org/en-US/firefox/addon/adblock-plus
 }
 
 @test "Module exec with url arg missing" {
@@ -89,6 +89,6 @@ setup() {
 }
 
 teardown() {
-  docker stop $DOCKER_CONTAINER_NAME > /dev/null
-  docker rm $DOCKER_CONTAINER_NAME > /dev/null
+  docker stop $docker_container_name > /dev/null
+  docker rm $docker_container_name > /dev/null
 }
