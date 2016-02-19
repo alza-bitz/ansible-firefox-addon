@@ -12,6 +12,8 @@ Requirements
   - xmllint
   - sed
 
+Currently the `firefox_addon` module has only been tested against Fedora (23) hosts, but in theory should work for all Linux variants.
+
 Arguments
 ---------
 
