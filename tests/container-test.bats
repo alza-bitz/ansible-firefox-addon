@@ -2,37 +2,67 @@
 
 # testing requirements: docker, ansible
 
-# https://github.com/tutumcloud/tutum-fedora
-readonly docker_image="tutum/fedora:21"
-readonly docker_container_name="ansible-firefox-addon"
+readonly container_name="ansible-firefox-addon"
 readonly addon_url=https://addons.mozilla.org/en-US/firefox/addon/adblock-plus
 
 docker_exec() {
-  docker exec $docker_container_name $@ > /dev/null
+  docker exec $container_name $@ > /dev/null
 }
 
 docker_exec_d() {
-  docker exec -d $docker_container_name $@ > /dev/null
+  docker exec -d $container_name $@ > /dev/null
 }
 
 docker_exec_sh() {
   # workaround for https://github.com/sstephenson/bats/issues/89
   local IFS=' '
-  docker exec $docker_container_name sh -c "$*" > /dev/null
+  docker exec $container_name sh -c "$*" > /dev/null
 }
 
 ansible_exec_module() {
   local _name=$1
   local _args=$2
-  ANSIBLE_LIBRARY=../ ansible localhost -i hosts -u root -m $_name ${_args:+-a "$_args"}
+  ANSIBLE_LIBRARY=../ ansible container -i hosts -u test -m $_name ${_args:+-a "$_args"}
+}
+
+container_startup() {
+  local _container_name=$1
+  local _container_image=$2
+  local _ssh_host=localhost
+  local _ssh_port=5555
+  local _ssh_public_key=~/.ssh/id_rsa.pub
+  docker run --name $_container_name -d -p $_ssh_port:22 \
+    -e USERNAME=test -e AUTHORIZED_KEYS="$(< $_ssh_public_key)" -v $_container_name:/var/cache/dnf $_container_image
+  ansible localhost -m wait_for -a "port=$_ssh_port host=$_ssh_host search_regex=OpenSSH delay=10"
+}
+
+container_cleanup() {
+  local _container_name=$1
+  docker stop $_container_name > /dev/null
+  docker rm $_container_name > /dev/null
+}
+
+container_exec() {
+  ansible container -i hosts -u test -m shell -a "$*" | tail -n +2
+}
+
+container_exec_sudo() {
+  ansible container -i hosts -u test -s -m shell -a "$*" | tail -n +2
+}
+
+container_dnf_conf() {
+  local _name=$1
+  local _value=$2
+  ansible container -i hosts -u test -s -m lineinfile -a \
+    "dest=/etc/dnf/dnf.conf regexp='^$_name=\S+$' line='$_name=$_value'"
 }
 
 setup() {
-  local _ssh_public_key=~/.ssh/id_rsa.pub
-  docker run --name $docker_container_name -d -p 5555:22 -e AUTHORIZED_KEYS="$(< $_ssh_public_key)" -v $docker_container_name:/var/cache/yum/x86_64/21/ $docker_image
-  docker_exec sed -i -e 's/keepcache=\(.*\)/keepcache=1/' /etc/yum.conf
-  docker_exec yum -y install deltarpm xorg-x11-server-Xvfb
-  docker_exec_d Xvfb :1
+  container_startup $container_name 'alzadude/fedora-ansible-test:23'
+  container_dnf_conf keepcache 1
+  container_dnf_conf metadata_timer_sync 0
+  container_exec_sudo dnf -q -y install xorg-x11-server-Xvfb daemonize
+  container_exec_sudo daemonize /usr/bin/Xvfb :1
 }
 
 @test "Module exec with url arg missing" {
@@ -95,6 +125,5 @@ setup() {
 }
 
 teardown() {
-  docker stop $docker_container_name > /dev/null
-  docker rm $docker_container_name > /dev/null
+  container_cleanup $container_name
 }
