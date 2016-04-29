@@ -16,8 +16,8 @@ result() {
 }
 
 ensure_profile() {
-  local _display=$1
-  local _result_name=$2
+  local _result_name=$1
+  local _display=$2
   local _stdout
   _stdout=$(firefox ${_display:+--display $_display} -no-remote -CreateProfile default 2>&1)
   [[ $? -eq 0 ]] || fail "couldn't determine profile path" "$_stdout"
@@ -161,7 +161,7 @@ main() {
   setup_tmp addon_tmp
   trap 'cleanup_tmp $addon_tmp' EXIT
 
-  { [[ -n $profile ]] && readonly addon_profile=$profile; } || ensure_profile $display addon_profile
+  { [[ -n $profile ]] && readonly addon_profile=$profile; } || ensure_profile addon_profile $display
   readonly addon_path=${addon_profile}/extensions
   details $url addon_details
   details_guid "$addon_details" addon_guid

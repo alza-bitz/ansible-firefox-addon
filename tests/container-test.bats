@@ -88,6 +88,12 @@ setup() {
   docker_exec_sh grep FXChrome "~/.mozilla/firefox/*.default/user.js"
 }
 
+@test "Module exec with display arg missing when there is no DISPLAY environment" {
+  docker_exec yum -y install firefox unzip curl
+  run ansible_exec_module firefox_addon "url=$addon_url"
+  [[ $output =~ 'Error: no display specified' ]]
+}
+
 teardown() {
   docker stop $docker_container_name > /dev/null
   docker rm $docker_container_name > /dev/null
