@@ -46,7 +46,7 @@ details_guid() {
   local _details=$1
   local _result_name=$2
   local _stdout
-  _stdout=$(xmllint --xpath "normalize-space(//addon/guid)" <(printf "$_details")) || fail "couldn't determine guid of addon"
+  _stdout=$(xmllint --xpath "normalize-space(//addon/guid)" <(printf '%s' "$_details")) || fail "couldn't determine guid of addon"
   result "$_result_name" "$_stdout" 
 }
 
@@ -54,14 +54,14 @@ details_url() {
   local _details=$1
   local _result_name=$2
   local _stdout
-  _stdout=$(xmllint --xpath "normalize-space(//addon/install[@os='Linux' or @os='ALL'])" <(printf "$_details")) || \
+  _stdout=$(xmllint --xpath "normalize-space(//addon/install[@os='Linux' or @os='ALL'])" <(printf '%s' "$_details")) || \
     fail "couldn't determine download url of addon"
   result "$_result_name" "$_stdout"
 }
 
 details_complete_theme() {
   local _details=$1
-  xmllint --xpath "//addon[type/@id=2]" <(printf "$_details") >/dev/null 2>&1
+  xmllint --xpath "//addon[type/@id=2]" <(printf '%s' "$_details") >/dev/null 2>&1
 }
 
 download() {
