@@ -19,14 +19,14 @@ Currently the `firefox_addon` module has only been tested against Fedora (23) ho
 Arguments
 ---------
 
-  - url: url of addon page at addons.mozilla.org (required)
+  - url: either the addon page url at addons.mozilla.org, or a direct addon xpi url (required)
   - profile: path of Firefox profile (optional, defaults to path of profile named `default`)
   - state: one of `present`, `absent` (optional, defaults to `present`)
 
 Notes:
 
   - A Firefox profile named 'default' will be created if it doesn't already exist.
-  - If the addon being installed is a 'complete theme' addon, it will be set as the selected theme.
+  - If the addon is a 'complete theme' addon (and is being installed from the addon page url), it will be set as the selected theme.
 
 Dependencies
 ------------

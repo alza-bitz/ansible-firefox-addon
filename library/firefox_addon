@@ -163,16 +163,22 @@ main() {
 
   { [[ -n $profile ]] && readonly addon_profile=$profile; } || ensure_profile addon_profile $display
   readonly addon_path=${addon_profile}/extensions
-  details $url addon_details
-  details_guid "$addon_details" addon_guid
+  if [[ $url =~ https://addons.mozilla.org/.+/firefox/addon/([^/]+) ]]
+  then
+    details $url addon_details
+    details_url "$addon_details" addon_url
+    download $addon_url $addon_tmp addon_file
+    details_guid "$addon_details" addon_guid
+  else
+    download $url $addon_tmp addon_file
+    parse_guid $addon_file addon_guid
+  fi
   readonly addon_state="${state:-present}"
 
   if [[ $addon_state = "present" ]]; then
     { verify $addon_guid && printf '{"changed": false}'; } || { 
-      details_url "$addon_details" addon_url
-      download $addon_url $addon_tmp addon_file
       install $addon_guid $addon_file
-      details_complete_theme "$addon_details" && {
+      [[ -n $addon_details ]] && details_complete_theme "$addon_details" && {
         parse_internal_name $addon_file addon_internal_name
         prefs_user $addon_profile general.skins.selectedSkin '"'$addon_internal_name'"'
       }

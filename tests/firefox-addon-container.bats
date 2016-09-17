@@ -33,6 +33,14 @@ setup() {
   container_exec $container test -d "~/.mozilla/firefox/*.default/extensions/{d10d0bf8-f5b5-c8b4-a8b2-2b9879e08c5d}"
 }
 
+@test "Module exec with xpi url instead of page url" {
+  local _addon_url=https://addons.mozilla.org/firefox/downloads/latest/adblock-plus/addon-1865-latest.xpi
+  container_exec_sudo $container dnf -q -y install firefox unzip
+  run container_exec_module $container firefox_addon "url=$_addon_url display=:1"
+  [[ $output =~ SUCCESS.*changed.*true ]]
+  container_exec $container test -d "~/.mozilla/firefox/*.default/extensions/{d10d0bf8-f5b5-c8b4-a8b2-2b9879e08c5d}"
+}
+
 @test "Module exec with state present" {
   container_exec_sudo $container dnf -q -y install firefox unzip
   run container_exec_module $container firefox_addon "url=$addon_url state=present display=:1"
