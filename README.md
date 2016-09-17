@@ -1,6 +1,8 @@
 ansible-firefox-addon
 =====================
 
+[![Build Status](https://travis-ci.org/alzadude/ansible-firefox-addon.svg?branch=master)](https://travis-ci.org/alzadude/ansible-firefox-addon)
+
 This Ansible role provides a `firefox_addon` module for installing or uninstalling Firefox addons.
 
 Requirements
@@ -74,5 +76,5 @@ ansible-playbook -i hosts playbook.yml
 License
 -------
 
-BSD
+MIT
 
