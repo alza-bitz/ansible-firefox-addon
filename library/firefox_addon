@@ -37,7 +37,7 @@ details() {
   local _slug
   _slug=$(url_slug $_url) || fail "couldn't determine addon id from url: $_url"
   local _stdout
-  _stdout=$(curl -s -f -L https://services.addons.mozilla.org/firefox/api/1.5/addon/$_slug)
+  _stdout=$(curl -s -f -L https://addons.mozilla.org/api/v4/addons/addon/$_slug)
   [[ $? -eq 0 ]] || fail "couldn't get details of addon: $_slug" "$_stdout"
   result "$_result_name" "$_stdout"
 }
@@ -46,7 +46,7 @@ details_guid() {
   local _details=$1
   local _result_name=$2
   local _stdout
-  _stdout=$(xmllint --xpath "normalize-space(//addon/guid)" <(printf '%s' "$_details")) || fail "couldn't determine guid of addon"
+  _stdout=$(jq --raw-output '.guid' <(printf '%s' "$_details")) || fail "couldn't determine guid of addon"
   result "$_result_name" "$_stdout" 
 }
 
@@ -54,7 +54,7 @@ details_url() {
   local _details=$1
   local _result_name=$2
   local _stdout
-  _stdout=$(xmllint --xpath "normalize-space(//addon/install[@os='Linux' or @os='ALL'])" <(printf '%s' "$_details")) || \
+  _stdout=$(jq --raw-output '.current_version.files[] | select(.platform == "all" or .platform == "linux").url' <(printf '%s' "$_details") | head -n 1) || \
     fail "couldn't determine download url of addon"
   result "$_result_name" "$_stdout"
 }
@@ -77,14 +77,9 @@ parse_guid() {
   local _result_name=$2
   local IFS=$'\n'
   local _stdout_lines
-  _stdout_lines=($(xmllint --shell <(unzip -p $_file install.rdf) <<EOF
-    setns rdf=http://www.w3.org/1999/02/22-rdf-syntax-ns#
-    setns em=http://www.mozilla.org/2004/em-rdf#
-    cat /rdf:RDF/rdf:Description/em:id/text()
-EOF
-  ))
+  _stdout=$(jq --raw-output '.applications.gecko.id' <(unzip -p $_file manifest.json))
   [[ $? -eq 0 ]] || fail "couldn't determine guid of addon"
-  result "$_result_name" "${_stdout_lines[1]}"
+  result "$_result_name" "${_stdout}"
 }
 
 parse_internal_name() {
@@ -104,7 +99,7 @@ EOF
 
 verify() {
   local _uid=$1
-  [[ -d "$addon_path/$_uid" ]] && return 0
+  [[ -f "$addon_path/$_uid.xpi" ]] && return 0
   return 1
 }
 
@@ -112,14 +107,14 @@ install() {
   local _uid=$1
   local _file=$2
   local _stdout
-  _stdout=$({ mkdir -p $addon_path && unzip $_file -d "$addon_path/$_uid" && chmod -R u=rwX,go=rX "$addon_path/$_uid"; } 2>&1)
+  _stdout=$({ mkdir -p $addon_path && mv $_file "$addon_path/$_uid.xpi" && chmod -R u=rw,go=r "$addon_path/$_uid.xpi"; } 2>&1)
   [[ $? -eq 0 ]] || fail "couldn't install addon: $_uid" "$_stdout"
 }
 
 uninstall() {
   local _uid=$1
   local _stdout
-  _stdout=$(rm -r "$addon_path/$_uid" 2>&1)
+  _stdout=$(rm -r "$addon_path/$_uid.xpi" 2>&1)
   [[ $? -eq 0 ]] || fail "couldn't uninstall addon: $_uid" "$_stdout"
 }
 
@@ -157,6 +152,7 @@ main() {
   hash unzip 2>/dev/null || fail "required command not found: unzip"
   hash xmllint 2>/dev/null || fail "required command not found: xmllint"
   hash chmod 2>/dev/null || fail "required command not found: chmod"
+  hash jq 2>/dev/null || fail "required command not found: jq"
 
   setup_tmp addon_tmp
   trap 'cleanup_tmp $addon_tmp' EXIT
