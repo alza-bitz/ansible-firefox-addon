@@ -1,7 +1,7 @@
 #!/bin/bash
 
 script() {
-  [[ ${0##*/} = firefox_addon ]]
+  [[ ${0##*/} =~ .*firefox_addon ]]
 }
 
 fail() {
